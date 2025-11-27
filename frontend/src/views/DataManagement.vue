@@ -323,6 +323,148 @@
             </div>
           </div>
         </div>
+
+        <!-- 数据采集 -->
+        <div v-if="currentTab === 'collection'" class="data-panel">
+          <h2>数据采集</h2>
+          
+          <!-- 数据加载表单 -->
+          <div class="data-section">
+            <h3>数据加载</h3>
+            <div class="import-form">
+              <div class="data-actions">
+                <button class="btn btn-primary" @click="loadData">加载数据</button>
+                <button class="btn btn-secondary" @click="refreshCollectionData">刷新数据</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 数据目录概览 -->
+          <div class="data-section" v-if="dataInfo">
+            <h3>数据目录概览</h3>
+            <div class="directory-overview">
+              <div class="overview-item">
+                <span class="overview-label">交易日历:</span>
+                <span class="overview-value">{{ calendarCount }}</span>
+              </div>
+              <div class="overview-item">
+                <span class="overview-label">股票数量:</span>
+                <span class="overview-value">{{ stockCount }}</span>
+              </div>
+              <div class="overview-item">
+                <span class="overview-label">特征数据:</span>
+                <span class="overview-value">{{ featureCount }}</span>
+              </div>
+              <div class="overview-item">
+                <span class="overview-label">数据状态:</span>
+                <span class="overview-value" :class="{ 'result-success': dataStatus.data_loaded, 'result-error': !dataStatus.data_loaded }">
+                  {{ dataStatus.data_loaded ? '已加载' : '未加载' }}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 交易日历列表 -->
+          <div class="data-section" v-if="calendars.length > 0">
+            <h3>交易日历</h3>
+            <div class="data-table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>频率</th>
+                    <th>日期数量</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="calendar in calendars" :key="calendar.freq">
+                    <td>{{ calendar.freq }}</td>
+                    <td>{{ calendar.count }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          <!-- 股票列表 -->
+          <div class="data-section" v-if="instruments.length > 0">
+            <h3>股票列表</h3>
+            <div class="data-table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>指数名称</th>
+                    <th>股票数量</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="instrument in instruments" :key="instrument.index_name">
+                    <td>{{ instrument.index_name }}</td>
+                    <td>{{ instrument.count }}</td>
+                    <td>
+                      <button class="btn btn-sm btn-secondary" @click="viewSymbols(instrument.index_name)">查看股票</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- 股票详情弹窗 -->
+            <div v-if="showSymbolsModal" class="modal-overlay" @click="showSymbolsModal = false">
+              <div class="modal-content" @click.stop>
+                <div class="modal-header">
+                  <h3>{{ selectedIndex }} 股票列表</h3>
+                  <button class="modal-close" @click="showSymbolsModal = false">&times;</button>
+                </div>
+                <div class="modal-body">
+                  <div class="symbol-list">
+                    <div v-for="symbol in selectedSymbols" :key="symbol" class="symbol-item">{{ symbol }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 特征数据列表 -->
+          <div class="data-section" v-if="features.length > 0">
+            <h3>特征数据</h3>
+            <div class="data-table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>股票代码</th>
+                    <th>特征数量</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="feature in features" :key="feature.symbol">
+                    <td>{{ feature.symbol }}</td>
+                    <td>{{ feature.count }}</td>
+                    <td>
+                      <button class="btn btn-sm btn-secondary" @click="viewSymbolFeatures(feature.symbol)">查看特征</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- 特征详情弹窗 -->
+            <div v-if="showFeaturesModal" class="modal-overlay" @click="showFeaturesModal = false">
+              <div class="modal-content" @click.stop>
+                <div class="modal-header">
+                  <h3>{{ selectedSymbol }} 特征列表</h3>
+                  <button class="modal-close" @click="showFeaturesModal = false">&times;</button>
+                </div>
+                <div class="modal-body">
+                  <div class="feature-list">
+                    <div v-for="feature in selectedFeatures" :key="feature" class="feature-item">{{ feature }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
 
@@ -335,6 +477,7 @@
 
 <script lang="ts">
 import { defineComponent, reactive, ref } from 'vue'
+import axios from 'axios'
 
 /**
  * 菜单项类型定义
@@ -393,6 +536,7 @@ export default defineComponent({
       { id: 'crypto', title: '加密货币', icon: 'icon-crypto' },
       { id: 'stock', title: '股票', icon: 'icon-stock' },
       { id: 'import', title: '数据导入', icon: 'icon-import' },
+      { id: 'collection', title: '数据采集', icon: 'icon-collection' },
       { id: 'quality', title: '数据质量', icon: 'icon-quality' },
       { id: 'visualization', title: '数据可视化', icon: 'icon-visualization' }
     ]
@@ -752,35 +896,179 @@ export default defineComponent({
       }
     }
     
+    // 数据采集相关
+    const collectionForm = reactive({
+      // 移除qlibDir字段
+    })
+    
+    const dataInfo = ref<any>(null)
+    const dataStatus = ref<any>({ data_loaded: false, qlib_dir: '' })
+    const calendars = ref<any[]>([])
+    const instruments = ref<any[]>([])
+    const features = ref<any[]>([])
+    const calendarCount = ref(0)
+    const stockCount = ref(0)
+    const featureCount = ref(0)
+    
+    // 弹窗相关
+    const showSymbolsModal = ref(false)
+    const showFeaturesModal = ref(false)
+    const selectedIndex = ref('')
+    const selectedSymbols = ref<string[]>([])
+    const selectedSymbol = ref('')
+    const selectedFeatures = ref<string[]>([])
+    
+    /**
+     * 加载QLib数据
+     */
+    const loadData = async () => {
+      try {
+        const response = await axios.post('http://localhost:8000/api/data/load', {
+          // 不再传递qlib_dir参数
+        })
+        
+        if (response.data.code === 0) {
+          showMessage('数据加载成功')
+          await refreshCollectionData()
+        } else {
+          showMessage(`数据加载失败: ${response.data.message}`)
+        }
+      } catch (error) {
+        console.error('数据加载失败:', error)
+        showMessage('数据加载失败，请检查后端服务是否正常')
+      }
+    }
+    
+    /**
+     * 刷新数据采集页面数据
+     */
+    const refreshCollectionData = async () => {
+      try {
+        // 获取数据服务状态
+        const statusResponse = await axios.get('http://localhost:8000/api/data/status')
+        if (statusResponse.data.code === 0) {
+          dataStatus.value = statusResponse.data.data
+        }
+        
+        // 如果数据已加载，获取详细数据信息
+        if (dataStatus.value.data_loaded) {
+          // 获取数据信息
+          const infoResponse = await axios.get('http://localhost:8000/api/data/info')
+          if (infoResponse.data.code === 0) {
+            dataInfo.value = infoResponse.data.data
+          }
+          
+          // 获取交易日历
+          const calendarsResponse = await axios.get('http://localhost:8000/api/data/calendars')
+          if (calendarsResponse.data.code === 0) {
+            calendars.value = calendarsResponse.data.data
+            calendarCount.value = calendars.value.length
+          }
+          
+          // 获取成分股
+          const instrumentsResponse = await axios.get('http://localhost:8000/api/data/instruments')
+          if (instrumentsResponse.data.code === 0) {
+            instruments.value = instrumentsResponse.data.data
+            stockCount.value = instruments.value.reduce((sum: number, item: any) => sum + item.count, 0)
+          }
+          
+          // 获取特征数据
+          const featuresResponse = await axios.get('http://localhost:8000/api/data/features')
+          if (featuresResponse.data.code === 0) {
+            features.value = featuresResponse.data.data
+            featureCount.value = features.value.length
+          }
+        }
+      } catch (error) {
+        console.error('刷新数据失败:', error)
+        showMessage('刷新数据失败，请检查后端服务是否正常')
+      }
+    }
+    
+    /**
+     * 查看股票列表
+     */
+    const viewSymbols = async (indexName: string) => {
+      try {
+        const response = await axios.get(`http://localhost:8000/api/data/instruments?index_name=${indexName}`)
+        if (response.data.code === 0) {
+          selectedIndex.value = indexName
+          selectedSymbols.value = response.data.data.symbols
+          showSymbolsModal.value = true
+        }
+      } catch (error) {
+        console.error('获取股票列表失败:', error)
+        showMessage('获取股票列表失败')
+      }
+    }
+    
+    /**
+     * 查看股票特征
+     */
+    const viewSymbolFeatures = async (symbol: string) => {
+      try {
+        const response = await axios.get(`http://localhost:8000/api/data/features/${symbol}`)
+        if (response.data.code === 0) {
+          selectedSymbol.value = symbol
+          selectedFeatures.value = response.data.data.features
+          showFeaturesModal.value = true
+        }
+      } catch (error) {
+        console.error('获取股票特征失败:', error)
+        showMessage('获取股票特征失败')
+      }
+    }
+    
     return {
-      currentTab,
-      showSuccessMessage,
-      successMessage,
-      menuItems,
-      cryptoData,
-      stockData,
-      formatNumber,
-      refreshCryptoData,
-      exportCryptoData,
-      refreshStockData,
-      exportStockData,
-      // 数据导入相关
-      importForm,
-      importProgress,
-      importLog,
-      handleFileUpload,
-      startImport,
-      resetImportForm,
-      // 数据质量检查相关
-      qualityForm,
-      qualityResult,
-      startQualityCheck,
-      resultClass,
-      // 数据可视化相关
-      vizForm,
-      vizChartUrl,
-      generateVisualization,
-      exportChart
+        currentTab,
+        showSuccessMessage,
+        successMessage,
+        menuItems,
+        cryptoData,
+        stockData,
+        formatNumber,
+        refreshCryptoData,
+        exportCryptoData,
+        refreshStockData,
+        exportStockData,
+        // 数据导入相关
+        importForm,
+        importProgress,
+        importLog,
+        handleFileUpload,
+        startImport,
+        resetImportForm,
+        // 数据质量检查相关
+        qualityForm,
+        qualityResult,
+        startQualityCheck,
+        resultClass,
+        // 数据可视化相关
+        vizForm,
+        vizChartUrl,
+        generateVisualization,
+        exportChart,
+        // 数据采集相关
+        collectionForm,
+        dataInfo,
+        dataStatus,
+        calendars,
+        instruments,
+        features,
+        calendarCount,
+        stockCount,
+        featureCount,
+        loadData,
+        refreshCollectionData,
+        // 弹窗相关
+        showSymbolsModal,
+        showFeaturesModal,
+        selectedIndex,
+        selectedSymbols,
+        selectedSymbol,
+        selectedFeatures,
+        viewSymbols,
+        viewSymbolFeatures
     }
   }
 })
@@ -1220,6 +1508,108 @@ export default defineComponent({
 .icon-quality::before { content: '🔍'; }
 .icon-visualization::before { content: '📊'; }
 .icon-chart::before { content: '📈'; }
+.icon-collection::before { content: '📥'; }
+
+/* 数据采集样式 */
+.directory-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.overview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.overview-label {
+  font-weight: 500;
+  color: #666;
+}
+
+.overview-value {
+  font-weight: 600;
+  font-size: 18px;
+  color: #4a6cf7;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #999;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.symbol-list, .feature-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.symbol-item, .feature-item {
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 14px;
+}
 
 /* 响应式设计 */
 @media (max-width: 768px) {
@@ -1258,6 +1648,14 @@ export default defineComponent({
   
   .result-summary {
     grid-template-columns: 1fr;
+  }
+  
+  .directory-overview {
+    grid-template-columns: 1fr;
+  }
+  
+  .symbol-list, .feature-list {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   }
 }
 </style>

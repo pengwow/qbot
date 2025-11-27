@@ -12,12 +12,16 @@ from .schemas import (
 from .scripts.get_data import GetData
 from .scripts.convert_to_qlib import convert_crypto_to_qlib
 from .api.config import router as config_router
+from .api.data import router as data_router
 
 # 创建API路由实例
 router = APIRouter()
 
 # 注册配置管理API路由
 router.include_router(config_router)
+
+# 注册数据加载API路由
+router.include_router(data_router)
 
 # 创建数据处理API路由子路由
 router_data = APIRouter(prefix="/api/data", tags=["data-processing"])

@@ -11,3 +11,4 @@ qlib/
 frontend/design-proposal.md
 backend/collector/README.md
 backend/data/system.db
+crypto_data/
