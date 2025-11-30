@@ -99,3 +99,83 @@ class DataResponse(BaseModel):
     feature: str = Field(..., description="特征名称")
     data: Dict[str, float] = Field(default_factory=dict, description="特征数据，格式为{日期: 值}")
     count: int = Field(default=0, description="数据数量")
+
+
+class DownloadCryptoRequest(BaseModel):
+    """下载加密货币数据请求模型
+    
+    Attributes:
+        symbols: 品种列表
+        interval: 时间间隔列表
+        start: 开始时间
+        end: 结束时间
+        exchange: 交易所
+        max_workers: 最大工作线程数
+        candle_type: 蜡烛图类型
+    """
+    symbols: List[str] = Field(..., description="品种列表")
+    interval: List[str] = Field(..., description="时间间隔列表")
+    start: Optional[str] = Field(None, description="开始时间")
+    end: Optional[str] = Field(None, description="结束时间")
+    exchange: str = Field(default="binance", description="交易所")
+    max_workers: int = Field(default=1, description="最大工作线程数")
+    candle_type: str = Field(default="spot", description="蜡烛图类型")
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态响应模型
+    
+    Attributes:
+        task_id: 任务ID
+        status: 任务状态（pending, running, completed, failed）
+        progress: 任务进度百分比
+        total: 总任务数
+        completed: 已完成任务数
+        failed: 失败任务数
+        current: 当前处理的项目
+        created_at: 任务创建时间
+        updated_at: 任务更新时间
+        error: 错误信息
+    """
+    task_id: str = Field(..., description="任务ID")
+    status: str = Field(..., description="任务状态（pending, running, completed, failed）")
+    progress: float = Field(..., description="任务进度百分比")
+    total: int = Field(..., description="总任务数")
+    completed: int = Field(..., description="已完成任务数")
+    failed: int = Field(..., description="失败任务数")
+    current: Optional[str] = Field(None, description="当前处理的项目")
+    created_at: datetime = Field(..., description="任务创建时间")
+    updated_at: datetime = Field(..., description="任务更新时间")
+    error: Optional[str] = Field(None, description="错误信息")
+
+
+class TaskProgressResponse(BaseModel):
+    """任务进度响应模型
+    
+    Attributes:
+        task_id: 任务ID
+        progress: 任务进度百分比
+        total: 总任务数
+        completed: 已完成任务数
+        failed: 失败任务数
+        current: 当前处理的项目
+    """
+    task_id: str = Field(..., description="任务ID")
+    progress: float = Field(..., description="任务进度百分比")
+    total: int = Field(..., description="总任务数")
+    completed: int = Field(..., description="已完成任务数")
+    failed: int = Field(..., description="失败任务数")
+    current: Optional[str] = Field(None, description="当前处理的项目")
+
+
+class TaskResponse(BaseModel):
+    """任务响应模型，用于返回任务创建结果
+    
+    Attributes:
+        task_id: 任务ID
+        status: 任务状态
+        message: 任务创建消息
+    """
+    task_id: str = Field(..., description="任务ID")
+    status: str = Field(..., description="任务状态")
+    message: str = Field(..., description="任务创建消息")

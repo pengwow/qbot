@@ -1,6 +1,6 @@
 # 数据处理API路由定义
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from loguru import logger
 
@@ -11,8 +11,12 @@ from .schemas import (
 )
 from .scripts.get_data import GetData
 from .scripts.convert_to_qlib import convert_crypto_to_qlib
+
+# 导入配置管理API路由
 from .api.config import router as config_router
 from .api.data import router as data_router
+from .api.system import router as system_router
+from .db.models import Task
 
 # 创建API路由实例
 router = APIRouter()
@@ -22,6 +26,9 @@ router.include_router(config_router)
 
 # 注册数据加载API路由
 router.include_router(data_router)
+
+# 注册系统信息API路由
+router.include_router(system_router)
 
 # 创建数据处理API路由子路由
 router_data = APIRouter(prefix="/api/data", tags=["data-processing"])

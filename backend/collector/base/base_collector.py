@@ -166,33 +166,65 @@ class BaseCollector(abc.ABC):
                 self.mini_symbol_map.pop(symbol)
             return self.NORMAL_FLAG
     
-    def _collector(self, instrument_list):
+    def _collector(self, instrument_list, progress_callback=None, completed=0, total=0):
         """批量收集标的数据
         
         :param instrument_list: 标的列表
+        :param progress_callback: 进度回调函数，格式为 callback(current, completed, total, failed)
+        :param completed: 已完成的标的数量
+        :param total: 总标的数量
         :return: 收集失败的标的列表
         """
         error_symbol = []
+        failed = 0
+        
+        # 定义带进度回调的收集函数
+        def collect_with_progress(_inst, index):
+            nonlocal completed, failed
+            
+            # 调用回调函数更新进度
+            if progress_callback:
+                progress_callback(_inst, completed, total, failed)
+            
+            result = self._simple_collector(_inst)
+            completed += 1
+            
+            if result != self.NORMAL_FLAG:
+                error_symbol.append(_inst)
+                failed += 1
+            
+            # 再次调用回调函数更新进度
+            if progress_callback:
+                progress_callback(_inst, completed, total, failed)
+            
+            return result
+        
+        # 执行并行收集
         res = Parallel(n_jobs=self.max_workers)(
-            delayed(self._simple_collector)(_inst) for _inst in tqdm(instrument_list)
+            delayed(collect_with_progress)(_inst, idx) for idx, _inst in enumerate(instrument_list)
         )
-        for _symbol, _result in zip(instrument_list, res):
-            if _result != self.NORMAL_FLAG:
-                error_symbol.append(_symbol)
+        
         logger.info(f"收集失败的标的数量: {len(error_symbol)}")
         logger.info(f"当前收集的标的数量: {len(instrument_list)}")
         error_symbol.extend(self.mini_symbol_map.keys())
         return sorted(set(error_symbol))
     
-    def collect_data(self):
-        """执行数据收集"""
+    def collect_data(self, progress_callback=None):
+        """执行数据收集
+        
+        :param progress_callback: 进度回调函数，格式为 callback(current, completed, total, failed)
+        """
         logger.info("开始收集数据......")
         instrument_list = self.instrument_list
+        total_instruments = len(instrument_list)
+        completed = 0
+        failed = 0
+        
         for i in range(self.max_collector_count):
             if not instrument_list:
                 break
             logger.info(f"第 {i+1} 次获取数据")
-            instrument_list = self._collector(instrument_list)
+            instrument_list = self._collector(instrument_list, progress_callback, completed, total_instruments)
             logger.info(f"第 {i+1} 次收集完成")
         
         # 处理缓存的小数据量标的

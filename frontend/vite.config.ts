@@ -14,7 +14,7 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: 1421, // 修改为1421端口，与当前运行的开发服务器一致
     strictPort: true,
     host: host || false,
     hmr: host
@@ -27,6 +27,14 @@ export default defineConfig(async () => ({
     watch: {
       // 3. tell vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
+    },
+    // 添加代理配置，解决跨域问题
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
 }));

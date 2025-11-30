@@ -200,18 +200,37 @@
         <!-- 系统信息 -->
         <div v-if="currentTab === 'system'" class="settings-panel">
           <h2>系统信息</h2>
-          <div class="system-info">
+          
+          <!-- 加载状态 -->
+          <div v-if="isLoading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <span>加载系统信息中...</span>
+          </div>
+          
+          <!-- 错误信息 -->
+          <div v-else-if="error" class="error-state">
+            <div class="error-icon">⚠️</div>
+            <span>{{ error }}</span>
+            <button class="btn btn-secondary" @click="getSystemInfo">重试</button>
+          </div>
+          
+          <!-- 系统信息内容 -->
+          <div v-else class="system-info">
             <div class="info-section">
               <h3>版本信息</h3>
               <div class="info-item">
                 <span class="info-label">系统版本：</span>
-                <span class="info-value">{{ systemInfo.version }}</span>
+                <span class="info-value">{{ systemInfo.version.system_version }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Python 版本：</span>
+                <span class="info-value">{{ systemInfo.version.python_version }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">构建日期：</span>
-                <span class="info-value">{{ systemInfo.buildDate }}</span>
+                <span class="info-value">{{ systemInfo.version.build_date }}</span>
               </div>
-              <div class="info-item">
+              <div class="info-item" v-if="systemInfo.apiVersion">
                 <span class="info-label">API 版本：</span>
                 <span class="info-value">{{ systemInfo.apiVersion }}</span>
               </div>
@@ -221,15 +240,17 @@
               <h3>运行状态</h3>
               <div class="info-item">
                 <span class="info-label">运行时间：</span>
-                <span class="info-value">{{ systemInfo.uptime }}</span>
+                <span class="info-value">{{ systemInfo.running_status.uptime }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">服务状态：</span>
-                <span class="info-value status-running">{{ systemInfo.status }}</span>
+                <span class="info-value" :style="{ color: systemInfo.running_status.status_color === 'green' ? '#2ed573' : '#ff6348' }">
+                  {{ systemInfo.running_status.status === 'running' ? '正常运行' : systemInfo.running_status.status }}
+                </span>
               </div>
               <div class="info-item">
                 <span class="info-label">最后检查：</span>
-                <span class="info-value">{{ systemInfo.lastCheck }}</span>
+                <span class="info-value">{{ new Date(systemInfo.running_status.last_check).toLocaleString() }}</span>
               </div>
             </div>
 
@@ -237,15 +258,15 @@
               <h3>资源使用</h3>
               <div class="info-item">
                 <span class="info-label">CPU 使用率：</span>
-                <span class="info-value">{{ systemInfo.cpuUsage }}</span>
+                <span class="info-value">{{ systemInfo.resource_usage.cpu_usage }}%</span>
               </div>
               <div class="info-item">
                 <span class="info-label">内存使用：</span>
-                <span class="info-value">{{ systemInfo.memoryUsage }}</span>
+                <span class="info-value">{{ systemInfo.resource_usage.memory_usage }}</span>
               </div>
               <div class="info-item">
                 <span class="info-label">磁盘空间：</span>
-                <span class="info-value">{{ systemInfo.diskSpace }}</span>
+                <span class="info-value">{{ systemInfo.resource_usage.disk_space }}</span>
               </div>
             </div>
           </div>
@@ -272,6 +293,7 @@
 
 <script lang="ts">
 import { defineComponent, reactive, ref, onMounted } from 'vue'
+import axios from 'axios'
 
 /**
  * 菜单项类型定义
@@ -325,18 +347,41 @@ interface ApiSettings {
 }
 
 /**
+ * 版本信息类型定义
+ */
+interface VersionInfo {
+  system_version: string
+  python_version: string
+  build_date: string
+}
+
+/**
+ * 运行状态类型定义
+ */
+interface RunningStatus {
+  uptime: string
+  status: string
+  status_color: string
+  last_check: string
+}
+
+/**
+ * 资源使用类型定义
+ */
+interface ResourceUsage {
+  cpu_usage: number
+  memory_usage: string
+  disk_space: string
+}
+
+/**
  * 系统信息类型定义
  */
 interface SystemInfo {
-  version: string
-  buildDate: string
-  apiVersion: string
-  uptime: string
-  status: string
-  lastCheck: string
-  cpuUsage: string
-  memoryUsage: string
-  diskSpace: string
+  version: VersionInfo
+  running_status: RunningStatus
+  resource_usage: ResourceUsage
+  apiVersion?: string
 }
 
 /**
@@ -416,19 +461,56 @@ export default defineComponent({
     
     // 系统信息
     const systemInfo = reactive<SystemInfo>({
-      version: 'v1.2.3',
-      buildDate: '2024-01-20',
-      apiVersion: 'v2',
-      uptime: '5 天 12 小时',
-      status: '正常运行',
-      lastCheck: '2024-01-20 15:30:00',
-      cpuUsage: '12.5%',
-      memoryUsage: '3.2 GB / 8.0 GB',
-      diskSpace: '128 GB / 500 GB'
+      version: {
+        system_version: '',
+        python_version: '',
+        build_date: ''
+      },
+      running_status: {
+        uptime: '',
+        status: '',
+        status_color: 'green',
+        last_check: ''
+      },
+      resource_usage: {
+        cpu_usage: 0,
+        memory_usage: '',
+        disk_space: ''
+      },
+      apiVersion: ''
     })
+    
+    // 加载状态和错误信息
+    const isLoading = ref<boolean>(true)
+    const error = ref<string>('')
     
     // 原始设置
     const originalSettings = ref<OriginalSettings>({} as OriginalSettings)
+    
+    /**
+     * 获取系统信息
+     */
+    const getSystemInfo = async () => {
+      isLoading.value = true
+      error.value = ''
+      try {
+        const response = await axios.get('/api/system/info')
+        console.log('系统信息API响应:', response.data)
+        if (response.data.code === 0) {
+          // 更新系统信息，直接赋值，因为结构已经匹配
+          Object.assign(systemInfo, response.data.data)
+          console.log('更新后的系统信息:', systemInfo)
+        } else {
+          error.value = `获取系统信息失败: ${response.data.message}`
+          console.error('获取系统信息失败:', response.data.message)
+        }
+      } catch (err: any) {
+        error.value = `获取系统信息失败: ${err.message || '未知错误'}`
+        console.error('获取系统信息异常:', err)
+      } finally {
+        isLoading.value = false
+      }
+    }
     
     /**
      * 保存设置
@@ -475,7 +557,7 @@ export default defineComponent({
     }
     
     /**
-     * 组件挂载时保存原始设置
+     * 组件挂载时保存原始设置并获取系统信息
      */
     onMounted(() => {
       // 保存原始设置，用于重置功能
@@ -484,6 +566,9 @@ export default defineComponent({
         notifications: { ...notificationSettings },
         api: { ...apiSettings }
       }
+      
+      // 获取系统信息
+      getSystemInfo()
     })
     
     return {
@@ -497,7 +582,9 @@ export default defineComponent({
       originalSettings,
       saveSettings,
       resetSettings,
-      regenerateApiKey
+      regenerateApiKey,
+      isLoading,
+      error
     }
   }
 })
@@ -749,6 +836,45 @@ input:checked + .slider:before {
   border-radius: 50%;
 }
 
+/* 加载状态样式 */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: #666;
+  gap: 10px;
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e0e0e0;
+  border-top: 2px solid #4a6cf7;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 错误状态样式 */
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: #ff6348;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.error-icon {
+  font-size: 20px;
+}
+
 /* 系统信息样式 */
 .system-info {
   display: grid;
@@ -794,6 +920,10 @@ input:checked + .slider:before {
 
 .status-running {
   color: #2ed573;
+}
+
+.status-error {
+  color: #ff6348;
 }
 
 /* 底部按钮 */

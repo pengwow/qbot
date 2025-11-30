@@ -12,3 +12,5 @@ frontend/design-proposal.md
 backend/collector/README.md
 backend/data/system.db
 crypto_data/
+backend/data/
+backend/test_data/

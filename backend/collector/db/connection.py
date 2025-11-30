@@ -1,21 +1,26 @@
 # 数据库连接管理
 
-import duckdb
+import sqlite3
 import os
+import threading
 from pathlib import Path
 from loguru import logger
 
+# 导入配置管理器
+from backend.config import get_config
+
 # 数据库文件路径
-db_path = Path(__file__).parent.parent.parent / "data" / "system.db"
+default_db_path = Path(__file__).parent.parent.parent / "data" / "system.db"
 
 # 确保数据库目录存在
-db_path.parent.mkdir(parents=True, exist_ok=True)
+default_db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-class DuckDBConnection:
-    """DuckDB数据库连接管理类
+class DBConnection:
+    """数据库连接管理类
     
-    实现单例模式，确保全局只有一个数据库连接实例
+    实现单例模式，使用线程本地存储为每个线程创建独立的数据库连接
+    支持SQLite和DuckDB数据库
     """
     _instance = None
     
@@ -23,44 +28,96 @@ class DuckDBConnection:
         """创建单例实例
         
         Returns:
-            DuckDBConnection: 数据库连接实例
+            DBConnection: 数据库连接实例
         """
         if cls._instance is None:
-            cls._instance = super(DuckDBConnection, cls).__new__(cls)
-            cls._instance._conn = None
+            cls._instance = super(DBConnection, cls).__new__(cls)
+            # 使用线程本地存储，为每个线程创建独立的连接
+            cls._instance._local = threading.local()
         return cls._instance
     
     def connect(self):
         """建立数据库连接
         
         Returns:
-            duckdb.DuckDBPyConnection: 数据库连接对象
+            数据库连接对象
         """
-        if self._conn is None:
-            logger.info(f"正在连接数据库: {db_path}")
-            self._conn = duckdb.connect(str(db_path))
-            logger.info(f"数据库连接成功: {db_path}")
-        return self._conn
+        # 检查当前线程是否已有连接
+        if not hasattr(self._local, '_conn') or self._local._conn is None:
+            # 从配置获取数据库类型和文件路径
+            db_type = get_config("database.type", "sqlite")
+            db_file = get_config("database.file", str(default_db_path))
+            
+            logger.info(f"从配置读取数据库信息: type={db_type}, file={db_file}")
+            logger.info(f"默认数据库路径: {default_db_path}")
+            
+            # 解析数据库文件路径
+            db_path = Path(db_file).expanduser()
+            if not db_path.is_absolute():
+                # 相对路径相对于backend目录
+                db_path = Path(__file__).parent.parent.parent / db_path
+            
+            # 确保数据库目录存在
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            logger.info(f"最终数据库路径: {db_path}")
+            logger.info(f"正在连接{db_type}数据库: {db_path}")
+            
+            if db_type == "sqlite":
+                # SQLite连接
+                # 设置check_same_thread=False允许连接在不同线程中使用
+                # 设置timeout=30，遇到锁定时等待30秒
+                # 设置autocommit=True自动提交事务，减少锁争用
+                conn = sqlite3.connect(
+                    str(db_path), 
+                    check_same_thread=False,
+                    timeout=30  # 遇到锁定时等待30秒
+                )
+                # 设置返回字典格式
+                conn.row_factory = sqlite3.Row
+                # 启用自动提交模式，减少锁争用
+                conn.isolation_level = None
+            elif db_type == "duckdb":
+                # DuckDB连接
+                import duckdb
+                conn = duckdb.connect(str(db_path))
+            else:
+                # 默认使用SQLite
+                logger.warning(f"未知的数据库类型: {db_type}，使用SQLite")
+                conn = sqlite3.connect(str(db_path))
+                conn.row_factory = sqlite3.Row
+            
+            # 存储连接到线程本地存储
+            self._local._conn = conn
+            self._local._db_type = db_type
+            self._local._db_path = db_path
+            
+            logger.info(f"{db_type}数据库连接成功: {db_path}")
+        
+        return self._local._conn
     
     def close(self):
         """关闭数据库连接
         """
-        if self._conn is not None:
-            logger.info(f"正在关闭数据库连接: {db_path}")
-            self._conn.close()
-            self._conn = None
-            logger.info(f"数据库连接已关闭: {db_path}")
+        # 关闭当前线程的连接
+        if hasattr(self._local, '_conn') and self._local._conn is not None:
+            logger.info(f"正在关闭{self._local._db_type}数据库连接: {self._local._db_path}")
+            self._local._conn.close()
+            self._local._conn = None
+            self._local._db_type = None
+            self._local._db_path = None
+            logger.info(f"数据库连接已关闭")
 
 
 # 创建全局数据库连接实例
-db_instance = DuckDBConnection()
+db_instance = DBConnection()
 
 
 def get_db_connection():
     """获取数据库连接
     
     Returns:
-        duckdb.DuckDBPyConnection: 数据库连接对象
+        数据库连接对象
     """
     return db_instance.connect()
 
@@ -68,44 +125,88 @@ def get_db_connection():
 def init_db():
     """初始化数据库，创建所需的表
     
-    创建系统配置表，用于存储系统配置参数
-    """
-    conn = get_db_connection()
+    使用SQLAlchemy创建系统配置表和任务表，并插入默认配置
     
+    Raises:
+        Exception: 初始化失败时抛出异常
+    """
     try:
-        # 创建系统配置表
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS system_config (
-            key VARCHAR PRIMARY KEY,
-            value VARCHAR NOT NULL,
-            description VARCHAR,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
+        logger.info("开始初始化数据库...")
         
-        # DuckDB目前不支持触发器，移除触发器创建语句
+        # 使用SQLAlchemy创建表
+        from .database import Base, engine
+        from . import models
         
-        # 插入默认配置
-        default_configs = [
-            ("data_download_dir", str(Path.home() / ".qlib" / "crypto_data" / "source"), "数据下载目录"),
-            ("qlib_data_dir", str(Path.home() / ".qlib" / "crypto_data" / "qlib"), "QLib数据目录"),
+        logger.info("使用SQLAlchemy创建数据库表...")
+        # 创建所有表
+        Base.metadata.create_all(bind=engine)
+        logger.info("数据库表创建成功")
+        
+        # 验证表是否存在
+        logger.info("验证表是否存在...")
+        conn = get_db_connection()
+        
+        # 检查system_config表
+        system_config_exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='system_config'").fetchone()
+        logger.info(f"system_config表存在: {system_config_exists is not None}")
+        
+        # 检查tasks表
+        tasks_exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'").fetchone()
+        logger.info(f"tasks表存在: {tasks_exists is not None}")
+        
+        if not system_config_exists or not tasks_exists:
+            logger.error("表创建失败，数据库初始化失败")
+            raise Exception("表创建失败，数据库初始化失败")
+        
+        # 插入默认配置（保留原有逻辑）
+        logger.info("插入默认配置...")
+        # 先从配置文件读取相关配置
+        from backend.config import get_config
+        
+        # 配置映射：配置文件key -> (system_config_key, 默认值, 描述)
+        config_mapping = {
+            "quant.qlib_data_dir": ("qlib_data_dir", "data/source", "QLib数据目录"),
+            "app.max_workers": ("max_workers", "4", "最大工作线程数"),
+        }
+        
+        # 构建默认配置列表
+        default_configs = []
+        
+        # 1. 处理从配置文件映射的配置
+        for config_key, (db_key, default_value, description) in config_mapping.items():
+            # 从配置文件读取值，如果没有则使用默认值
+            value = get_config(config_key, default_value)
+            default_configs.append((db_key, str(value), description))
+        
+        # 2. 添加固定默认配置（没有在配置文件中定义的）
+        fixed_defaults = [
+            ("data_download_dir", "data/source", "数据下载目录"),
             ("current_market_type", "crypto", "当前交易模式: crypto(加密货币) 或 stock(股票)"),
             ("crypto_candle_type", "spot", "加密货币蜡烛图类型: spot(现货) 或 futures(期货)"),
             ("default_exchange", "binance", "默认交易所"),
             ("default_interval", "1d", "默认时间间隔"),
-            ("max_workers", "4", "最大工作线程数")
         ]
+        default_configs.extend(fixed_defaults)
         
         # 使用UPSERT插入默认配置
+        inserted_count = 0
         for key, value, description in default_configs:
-            conn.execute("""
+            result = conn.execute("""
             INSERT INTO system_config (key, value, description)
             VALUES (?, ?, ?)
             ON CONFLICT (key) DO NOTHING
             """, (key, value, description))
+            if result.rowcount > 0:
+                inserted_count += 1
+        
+        logger.info(f"默认配置插入完成，新增配置数: {inserted_count}")
+        
+        # 验证默认配置是否插入成功
+        config_count = conn.execute("SELECT COUNT(*) FROM system_config").fetchone()[0]
+        logger.info(f"系统配置表中配置数量: {config_count}")
         
         logger.info("数据库初始化完成")
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
+        logger.exception(e)  # 记录完整的异常堆栈
         raise

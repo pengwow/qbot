@@ -1,4 +1,5 @@
 from typing import Union
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from collector.routes import router as collector_router
@@ -6,7 +7,30 @@ from factor.routes import router as factor_router
 from model.routes import router as model_router
 from backtest.routes import router as backtest_router
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理
+    
+    Args:
+        app: FastAPI应用实例
+    
+    Yields:
+        None: 无返回值
+    """
+    # 启动时初始化数据库
+    from collector.db import init_db
+    init_db()
+    
+    # 初始化任务管理器，确保数据库表已创建
+    from collector.utils.task_manager import task_manager
+    task_manager.init()
+    
+    yield
+    # 关闭时的清理工作
+
+
+app = FastAPI(lifespan=lifespan)
 
 # 注册数据处理API路由
 app.include_router(collector_router)

@@ -12,6 +12,7 @@ from loguru import logger
 
 from backend.collector.crypto.binance.collector import BinanceCollector
 from backend.collector.crypto.okx.collector import OKXCollector
+from backend.collector.db.models import SystemConfig
 
 
 class GetData:
@@ -36,6 +37,7 @@ class GetData:
         symbols=None,
         convert_to_qlib=False,
         qlib_dir=None,
+        progress_callback=None,
     ):
         """
         从币安交易所下载加密货币数据
@@ -53,9 +55,23 @@ class GetData:
         :param symbols: 交易对列表，如'BTCUSDT,ETHUSDT'，如果为None则获取全量交易对
         :param convert_to_qlib: 是否将数据转换为QLib格式，默认False
         :param qlib_dir: QLib数据保存目录，如果为None则自动生成
+        :param progress_callback: 进度回调函数，格式为 callback(current, completed, total, failed)
         """
         if save_dir is None:
-            save_dir = self.default_save_dir / interval
+            # 从数据库中读取下载目录配置
+            try:
+                data_download_dir = SystemConfig.get("data_download_dir")
+                if data_download_dir:
+                    save_dir = Path(data_download_dir) / interval
+                    logger.info(f"从数据库获取下载目录: {save_dir}")
+                else:
+                    # 数据库中没有配置，使用默认值
+                    save_dir = self.default_save_dir / interval
+                    logger.info(f"数据库中未找到下载目录配置，使用默认值: {save_dir}")
+            except Exception as e:
+                # 数据库读取失败，使用默认值
+                save_dir = self.default_save_dir / interval
+                logger.warning(f"从数据库读取下载目录失败: {e}，使用默认值: {save_dir}")
         
         # 处理交易对列表
         if symbols is not None:
@@ -87,7 +103,7 @@ class GetData:
         )
         
         # 执行数据收集
-        collector.collect_data(convert_to_qlib=convert_to_qlib, qlib_dir=qlib_dir)
+        collector.collect_data(convert_to_qlib=convert_to_qlib, qlib_dir=qlib_dir, progress_callback=progress_callback)
         
         logger.info("数据下载完成！")
     
@@ -106,6 +122,7 @@ class GetData:
         symbols=None,
         convert_to_qlib=False,
         qlib_dir=None,
+        progress_callback=None,
     ):
         """
         从OKX交易所下载加密货币数据
@@ -123,9 +140,23 @@ class GetData:
         :param symbols: 交易对列表，如'BTC-USDT,ETH-USDT'，如果为None则获取全量交易对
         :param convert_to_qlib: 是否将数据转换为QLib格式，默认False
         :param qlib_dir: QLib数据保存目录，如果为None则自动生成
+        :param progress_callback: 进度回调函数，格式为 callback(current, completed, total, failed)
         """
         if save_dir is None:
-            save_dir = self.default_save_dir / interval
+            # 从数据库中读取下载目录配置
+            try:
+                data_download_dir = SystemConfig.get("data_download_dir")
+                if data_download_dir:
+                    save_dir = Path(data_download_dir) / interval
+                    logger.info(f"从数据库获取下载目录: {save_dir}")
+                else:
+                    # 数据库中没有配置，使用默认值
+                    save_dir = self.default_save_dir / interval
+                    logger.info(f"数据库中未找到下载目录配置，使用默认值: {save_dir}")
+            except Exception as e:
+                # 数据库读取失败，使用默认值
+                save_dir = self.default_save_dir / interval
+                logger.warning(f"从数据库读取下载目录失败: {e}，使用默认值: {save_dir}")
         
         # 处理交易对列表
         if symbols is not None:
@@ -157,7 +188,7 @@ class GetData:
         )
         
         # 执行数据收集
-        collector.collect_data(convert_to_qlib=convert_to_qlib, qlib_dir=qlib_dir)
+        collector.collect_data(convert_to_qlib=convert_to_qlib, qlib_dir=qlib_dir, progress_callback=progress_callback)
         
         logger.info("数据下载完成！")
     
@@ -177,6 +208,7 @@ class GetData:
         symbols=None,
         convert_to_qlib=False,
         qlib_dir=None,
+        progress_callback=None,
     ):
         """
         从指定交易所下载加密货币数据
@@ -195,6 +227,7 @@ class GetData:
         :param symbols: 交易对列表，如'BTCUSDT,ETHUSDT'（Binance）或'BTC-USDT,ETH-USDT'（OKX），如果为None则获取全量交易对
         :param convert_to_qlib: 是否将数据转换为QLib格式，默认False
         :param qlib_dir: QLib数据保存目录，如果为None则自动生成
+        :param progress_callback: 进度回调函数，格式为 callback(current, completed, total, failed)
         """
         if exchange == "binance":
             self.crypto_binance(
@@ -211,6 +244,7 @@ class GetData:
                 symbols=symbols,
                 convert_to_qlib=convert_to_qlib,
                 qlib_dir=qlib_dir,
+                progress_callback=progress_callback,
             )
         elif exchange == "okx":
             self.crypto_okx(
@@ -227,6 +261,7 @@ class GetData:
                 symbols=symbols,
                 convert_to_qlib=convert_to_qlib,
                 qlib_dir=qlib_dir,
+                progress_callback=progress_callback,
             )
         else:
             logger.error(f"不支持的交易所: {exchange}")
@@ -258,6 +293,22 @@ class GetData:
         :param check_data_length: 数据长度检查阈值
         :param limit_nums: 限制收集的标的数量
         """
+        if save_dir is None:
+            # 从数据库中读取下载目录配置
+            try:
+                data_download_dir = SystemConfig.get("data_download_dir")
+                if data_download_dir:
+                    save_dir = Path(data_download_dir) / interval
+                    logger.info(f"从数据库获取下载目录: {save_dir}")
+                else:
+                    # 数据库中没有配置，使用默认值
+                    save_dir = self.default_save_dir / interval
+                    logger.info(f"数据库中未找到下载目录配置，使用默认值: {save_dir}")
+            except Exception as e:
+                # 数据库读取失败，使用默认值
+                save_dir = self.default_save_dir / interval
+                logger.warning(f"从数据库读取下载目录失败: {e}，使用默认值: {save_dir}")
+        
         logger.warning("股票数据下载功能暂未实现")
     
     def help(self):

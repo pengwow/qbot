@@ -330,11 +330,256 @@
           
           <!-- 数据加载表单 -->
           <div class="data-section">
-            <h3>数据加载</h3>
+            <h3>数据获取</h3>
             <div class="import-form">
+              <!-- 第一行：品种和周期 -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="symbols">品种</label>
+                  <el-select
+                    v-model="collectionForm.symbols"
+                    multiple
+                    filterable
+                    allow-create
+                    clearable
+                    placeholder="请选择品种"
+                    class="form-control"
+                  >
+                    <el-option value="BTCUSDT" label="BTCUSDT" />
+                    <el-option value="ETHUSDT" label="ETHUSDT" />
+                    <el-option value="BNBUSDT" label="BNBUSDT" />
+                    <el-option value="SOLUSDT" label="SOLUSDT" />
+                    <el-option value="ADAUSDT" label="ADAUSDT" />
+                  </el-select>
+                </div>
+                
+                <div class="form-group">
+                  <label for="interval">周期</label>
+                  <el-select
+                    v-model="collectionForm.interval"
+                    multiple
+                    clearable
+                    placeholder="请选择周期"
+                    class="form-control"
+                  >
+                    <el-option value="1m" label="1分钟" />
+                    <el-option value="5m" label="5分钟" />
+                    <el-option value="15m" label="15分钟" />
+                    <el-option value="30m" label="30分钟" />
+                    <el-option value="1h" label="1小时" />
+                    <el-option value="4h" label="4小时" />
+                    <el-option value="1d" label="1天" />
+                  </el-select>
+                </div>
+              </div>
+              
+              <!-- 第二行：开始时间和结束时间 -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="start">开始时间</label>
+                  <el-date-picker
+                    v-model="collectionForm.start"
+                    type="datetime"
+                    placeholder="请选择开始时间"
+                    format="YYYY-MM-DD HH:mm:ss"
+                    value-format="YYYY-MM-DD HH:mm:ss"
+                    class="form-control"
+                    style="width: 100%"
+                  />
+                </div>
+                
+                <div class="form-group">
+                  <label for="end">结束时间</label>
+                  <el-date-picker
+                    v-model="collectionForm.end"
+                    type="datetime"
+                    placeholder="请选择结束时间"
+                    format="YYYY-MM-DD HH:mm:ss"
+                    value-format="YYYY-MM-DD HH:mm:ss"
+                    class="form-control"
+                    style="width: 100%"
+                  />
+                </div>
+              </div>
+              
+              <!-- 第三行：来源和蜡烛图类型 -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="exchange">来源</label>
+                  <el-select
+                    v-model="collectionForm.exchange"
+                    placeholder="请选择来源"
+                    class="form-control"
+                  >
+                    <el-option
+                      v-for="option in exchangeOptions"
+                      :key="option.value"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
+                </div>
+                
+                <div class="form-group">
+                  <label for="candle_type">蜡烛图类型</label>
+                  <el-select
+                    v-model="collectionForm.candle_type"
+                    placeholder="请选择蜡烛图类型"
+                    class="form-control"
+                  >
+                    <el-option
+                      v-for="option in candleTypeOptions"
+                      :key="option.value"
+                      :label="option.label"
+                      :value="option.value"
+                    />
+                  </el-select>
+                </div>
+              </div>
+              
+              <!-- 第三行：最大工作线程数 -->
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="max_workers">最大工作线程数</label>
+                  <el-input-number
+                    v-model="collectionForm.max_workers"
+                    :min="1"
+                    :max="10"
+                    :step="1"
+                    placeholder="请输入最大工作线程数"
+                    class="form-control"
+                  />
+                </div>
+              </div>
+              
+              <!-- 操作按钮 -->
               <div class="data-actions">
-                <button class="btn btn-primary" @click="loadData">加载数据</button>
+                <button class="btn btn-primary" @click="loadData" :disabled="isTaskRunning">开始下载</button>
                 <button class="btn btn-secondary" @click="refreshCollectionData">刷新数据</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 任务管理 -->
+          <div class="data-section">
+            <h3>任务管理</h3>
+            
+            <!-- 当前任务状态 -->
+            <div v-if="currentTaskId" class="current-task-section">
+              <h4>当前任务</h4>
+              <div class="task-info">
+                <div class="task-id">
+                  <span class="label">任务ID:</span>
+                  <span class="value">{{ currentTaskId }}</span>
+                </div>
+                <div class="task-status">
+                  <span class="label">状态:</span>
+                  <span class="value" :class="`status-${taskStatus}`">{{ getStatusText(taskStatus) }}</span>
+                </div>
+              </div>
+              
+              <!-- 任务详细信息 -->
+              <div class="task-details-info">
+                <div class="detail-item">
+                  <span class="label">任务类型:</span>
+                  <span class="value">下载加密货币数据</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">创建时间:</span>
+                  <span class="value">{{ new Date().toLocaleString() }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">品种:</span>
+                  <span class="value">{{ collectionForm.symbols.join(', ') || '未指定' }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">周期:</span>
+                  <span class="value">{{ collectionForm.interval.join(', ') || '未指定' }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">时间范围:</span>
+                  <span class="value">{{ collectionForm.start }} 至 {{ collectionForm.end }}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="label">来源:</span>
+                  <span class="value">{{ collectionForm.exchange }}</span>
+                </div>
+              </div>
+              
+              <!-- 任务进度条 -->
+              <div class="task-progress">
+                <div class="progress-bar-container">
+                  <div class="progress-bar" :style="{ width: `${taskProgress}%` }"></div>
+                </div>
+                <div class="progress-text">{{ taskProgress }}%</div>
+              </div>
+            </div>
+            
+            <!-- 最近任务列表 -->
+            <div class="recent-tasks-section">
+              <h4>最近任务</h4>
+              <div v-if="isLoading" class="loading-state">
+                <div class="loading-spinner"></div>
+                <span>加载任务列表中...</span>
+              </div>
+              <div v-else-if="tasks.length === 0" class="empty-state">
+                <span>暂无任务记录</span>
+              </div>
+              <div v-else class="recent-tasks-container">
+                <div v-for="task in tasks" :key="task.task_id" class="task-card">
+                  <div class="task-details">
+                    <div class="task-params-info">
+                      <div class="param-item">
+                        <span class="label">品种:</span>
+                        <el-tooltip
+                          :content="Array.isArray(task.params?.symbols) ? task.params.symbols.join(', ') : task.params?.symbols || '未指定'"
+                          placement="top"
+                          effect="dark"
+                        >
+                          <span class="value">{{ Array.isArray(task.params?.symbols) ? task.params.symbols.join(', ') : task.params?.symbols || '未指定' }}</span>
+                        </el-tooltip>
+                      </div>
+                      <div class="param-item">
+                        <span class="label">周期:</span>
+                        <span class="value">{{ task.params?.interval || '未指定' }}</span>
+                      </div>
+                      <div class="param-item">
+                        <span class="label">来源:</span>
+                        <span class="value">{{ task.params?.exchange || '未指定' }}</span>
+                      </div>
+                      <div class="param-item">
+                        <span class="label">时间范围:</span>
+                        <span class="value">{{ task.params?.start || '未指定' }} 至 {{ task.params?.end || '未指定' }}</span>
+                      </div>
+                    </div>
+                    <div class="task-time-info">
+                      <div class="time-item">
+                        <span class="label">创建时间:</span>
+                        <span class="value">{{ new Date(task.created_at).toLocaleString() }}</span>
+                      </div>
+                      <div v-if="task.completed_at" class="time-item">
+                        <span class="label">完成时间:</span>
+                        <span class="value">{{ new Date(task.completed_at).toLocaleString() }}</span>
+                      </div>
+                    </div>
+                    <div class="task-progress-info">
+                      <span class="label">进度:</span>
+                      <div class="progress-bar-container">
+                        <div class="progress-bar" :style="{ width: `${task.progress?.percentage || 0}%` }"></div>
+                      </div>
+                      <span class="progress-value">{{ task.progress?.percentage || 0 }}%</span>
+                    </div>
+                  </div>
+                  <div class="task-header">
+                    <div class="task-id-info">
+                      <span class="label">任务ID:</span>
+                      <span class="value">{{ task.task_id }}</span>
+                    </div>
+                    <div class="task-status-badge" :class="`status-${task.status}`">
+                      {{ getStatusText(task.status) }}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -476,7 +721,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, reactive, ref } from 'vue'
+import { defineComponent, reactive, ref, onMounted } from 'vue'
 import axios from 'axios'
 
 /**
@@ -536,7 +781,7 @@ export default defineComponent({
       { id: 'crypto', title: '加密货币', icon: 'icon-crypto' },
       { id: 'stock', title: '股票', icon: 'icon-stock' },
       { id: 'import', title: '数据导入', icon: 'icon-import' },
-      { id: 'collection', title: '数据采集', icon: 'icon-collection' },
+      { id: 'collection', title: 'crypto数据采集', icon: 'icon-collection' },
       { id: 'quality', title: '数据质量', icon: 'icon-quality' },
       { id: 'visualization', title: '数据可视化', icon: 'icon-visualization' }
     ]
@@ -898,8 +1143,26 @@ export default defineComponent({
     
     // 数据采集相关
     const collectionForm = reactive({
-      // 移除qlibDir字段
+      symbols: [] as string[], // 品种，支持多选
+      interval: [] as string[], // 周期，支持多选
+      start: '' as string, // 开始时间
+      end: '' as string, // 结束时间
+      exchange: 'binance' as string, // 来源，默认'binance'
+      max_workers: 1 as number, // 最大工作线程数，默认1
+      candle_type: 'spot' as string // 蜡烛图类型，默认'spot'
     })
+    
+    // 选项数据
+    const exchangeOptions = ref([
+      { value: 'binance', label: 'Binance' },
+      { value: 'okx', label: 'OKX' }
+    ])
+    
+    const candleTypeOptions = ref([
+      { value: 'spot', label: '现货' },
+      { value: 'futures', label: '期货' },
+      { value: 'option', label: '期权' }
+    ])
     
     const dataInfo = ref<any>(null)
     const dataStatus = ref<any>({ data_loaded: false, qlib_dir: '' })
@@ -910,6 +1173,20 @@ export default defineComponent({
     const stockCount = ref(0)
     const featureCount = ref(0)
     
+    // 任务列表相关
+    const tasks = ref<any[]>([])
+    const taskFilters = reactive({
+      status: '' as string,
+      task_type: 'download_crypto' as string // 只获取download_crypto类型的任务
+    })
+    const isLoading = ref(false)
+    
+    // 页面加载时获取任务列表
+    onMounted(() => {
+      console.log('页面加载，调用getTasks')
+      getTasks()
+    })
+    
     // 弹窗相关
     const showSymbolsModal = ref(false)
     const showFeaturesModal = ref(false)
@@ -918,24 +1195,185 @@ export default defineComponent({
     const selectedSymbol = ref('')
     const selectedFeatures = ref<string[]>([])
     
+    // 任务状态管理
+    const currentTaskId = ref<string>('') // 当前任务ID
+    const taskStatus = ref<string>('') // 任务状态
+    const taskProgress = ref<number>(0) // 任务进度
+    const taskLog = ref<string[]>([]) // 任务日志
+    const isTaskRunning = ref<boolean>(false) // 任务是否正在运行
+    let taskInterval: number | null = null // 任务状态查询定时器
+    
     /**
-     * 加载QLib数据
+     * 查询任务状态
+     */
+    const queryTaskStatus = async () => {
+      if (!currentTaskId.value) return
+      
+      try {
+        // 使用相对路径，通过Vite代理发送请求
+        const response = await axios.get(`/api/data/task/${currentTaskId.value}`)
+        
+        if (response.data.code === 0) {
+          const taskData = response.data.data
+          
+          // 更新任务状态
+          taskStatus.value = taskData.status || 'unknown'
+          
+          // 更新任务进度
+          let progressValue = 0
+          if (taskData.progress && typeof taskData.progress === 'object') {
+            // 如果progress是对象，使用percentage字段
+            progressValue = taskData.progress.percentage || 0
+          } else {
+            // 否则直接使用progress值
+            progressValue = taskData.progress || 0
+          }
+          taskProgress.value = progressValue
+          
+          // 更新任务日志
+          taskLog.value = Array.isArray(taskData.log) ? taskData.log : []
+          
+          // 如果任务完成、失败、取消或进度达到100%，停止定时查询
+          if (taskStatus.value === 'completed' || taskStatus.value === 'failed' || taskStatus.value === 'canceled' || progressValue >= 100) {
+            isTaskRunning.value = false
+            if (taskInterval) {
+              clearInterval(taskInterval)
+              taskInterval = null
+            }
+            showMessage(`任务${taskStatus.value === 'completed' ? '完成' : taskStatus.value === 'failed' ? '失败' : taskStatus.value === 'canceled' ? '已取消' : '完成'}`)
+          }
+        }
+      } catch (error) {
+        console.error('查询任务状态失败:', error)
+        // 后端报错，停止轮询
+        isTaskRunning.value = false
+        if (taskInterval) {
+          clearInterval(taskInterval)
+          taskInterval = null
+        }
+        showMessage('查询任务状态失败，请检查后端服务是否正常')
+      }
+    }
+    
+    /**
+     * 获取任务列表
+     */
+    const getTasks = async () => {
+      isLoading.value = true
+      try {
+        console.log('开始获取任务列表，参数:', {
+          page: 1,
+          page_size: 10,
+          sort_by: 'created_at',
+          sort_order: 'desc',
+          ...taskFilters
+        })
+        
+        const response = await axios.get('/api/data/tasks', {
+          params: {
+            page: 1,
+            page_size: 5,
+            sort_by: 'created_at',
+            sort_order: 'desc',
+            ...taskFilters
+          }
+        })
+        
+        console.log('获取任务列表响应:', response.data)
+        
+        // 检查响应结构
+        if (response.data && response.data.code === 0) {
+          if (response.data.data && Array.isArray(response.data.data.tasks)) {
+            tasks.value = response.data.data.tasks
+            console.log('处理后的任务列表:', tasks.value)
+            console.log('任务数量:', tasks.value.length)
+          } else {
+            console.error('响应数据结构异常，tasks不是数组:', response.data.data)
+            tasks.value = []
+          }
+        } else {
+          console.error('获取任务列表失败，响应代码:', response.data.code, '消息:', response.data.message)
+          showMessage(`获取任务列表失败: ${response.data.message || '未知错误'}`)
+          tasks.value = []
+        }
+      } catch (error: any) {
+        console.error('获取任务列表异常:', error.message || error)
+        console.error('错误详情:', error)
+        showMessage('获取任务列表失败，请检查网络连接或后端服务')
+        tasks.value = []
+      } finally {
+        isLoading.value = false
+      }
+    }
+    
+    /**
+     * 获取任务状态类型
+     */
+    const getStatusType = (status: string) => {
+      switch (status) {
+        case 'running':
+          return 'warning'
+        case 'completed':
+          return 'success'
+        case 'failed':
+          return 'danger'
+        case 'pending':
+          return 'info'
+        default:
+          return 'info'
+      }
+    }
+    
+    /**
+     * 获取任务状态文本
+     */
+    const getStatusText = (status: string) => {
+      switch (status) {
+        case 'running':
+          return '运行中'
+        case 'completed':
+          return '已完成'
+        case 'failed':
+          return '失败'
+        case 'pending':
+          return '等待中'
+        default:
+          return status
+      }
+    }
+    
+    /**
+     * 下载加密货币数据
      */
     const loadData = async () => {
       try {
-        const response = await axios.post('http://localhost:8000/api/data/load', {
-          // 不再传递qlib_dir参数
+        // 使用相对路径，通过Vite代理发送请求
+        const response = await axios.post('/api/data/download/crypto', {
+          ...collectionForm
         })
         
         if (response.data.code === 0) {
-          showMessage('数据加载成功')
-          await refreshCollectionData()
+          // 保存返回的task_id
+          currentTaskId.value = response.data.data.task_id
+          isTaskRunning.value = true
+          taskStatus.value = 'running'
+          taskProgress.value = 0
+          taskLog.value = []
+          
+          // 开始定时查询任务状态，每1秒查询一次
+          if (taskInterval) {
+            clearInterval(taskInterval)
+          }
+          taskInterval = window.setInterval(queryTaskStatus, 1000)
+          
+          // 立即查询一次任务状态
+          await queryTaskStatus()
         } else {
-          showMessage(`数据加载失败: ${response.data.message}`)
+          showMessage(`数据下载失败: ${response.data.message}`)
         }
       } catch (error) {
-        console.error('数据加载失败:', error)
-        showMessage('数据加载失败，请检查后端服务是否正常')
+        console.error('数据下载失败:', error)
+        showMessage('数据下载失败，请检查后端服务是否正常')
       }
     }
     
@@ -945,7 +1383,8 @@ export default defineComponent({
     const refreshCollectionData = async () => {
       try {
         // 获取数据服务状态
-        const statusResponse = await axios.get('http://localhost:8000/api/data/status')
+        // 使用相对路径，通过Vite代理发送请求
+        const statusResponse = await axios.get('/api/data/status')
         if (statusResponse.data.code === 0) {
           dataStatus.value = statusResponse.data.data
         }
@@ -953,32 +1392,36 @@ export default defineComponent({
         // 如果数据已加载，获取详细数据信息
         if (dataStatus.value.data_loaded) {
           // 获取数据信息
-          const infoResponse = await axios.get('http://localhost:8000/api/data/info')
+          const infoResponse = await axios.get('/api/data/info')
           if (infoResponse.data.code === 0) {
             dataInfo.value = infoResponse.data.data
           }
           
           // 获取交易日历
-          const calendarsResponse = await axios.get('http://localhost:8000/api/data/calendars')
+          const calendarsResponse = await axios.get('/api/data/calendars')
           if (calendarsResponse.data.code === 0) {
             calendars.value = calendarsResponse.data.data
             calendarCount.value = calendars.value.length
           }
           
           // 获取成分股
-          const instrumentsResponse = await axios.get('http://localhost:8000/api/data/instruments')
+          const instrumentsResponse = await axios.get('/api/data/instruments')
           if (instrumentsResponse.data.code === 0) {
             instruments.value = instrumentsResponse.data.data
             stockCount.value = instruments.value.reduce((sum: number, item: any) => sum + item.count, 0)
           }
           
           // 获取特征数据
-          const featuresResponse = await axios.get('http://localhost:8000/api/data/features')
+          const featuresResponse = await axios.get('/api/data/features')
           if (featuresResponse.data.code === 0) {
             features.value = featuresResponse.data.data
             featureCount.value = features.value.length
           }
         }
+        
+        // 刷新任务列表
+        console.log('刷新数据，调用getTasks')
+        await getTasks()
       } catch (error) {
         console.error('刷新数据失败:', error)
         showMessage('刷新数据失败，请检查后端服务是否正常')
@@ -990,7 +1433,8 @@ export default defineComponent({
      */
     const viewSymbols = async (indexName: string) => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/data/instruments?index_name=${indexName}`)
+        // 使用相对路径，通过Vite代理发送请求
+        const response = await axios.get(`/api/data/instruments?index_name=${indexName}`)
         if (response.data.code === 0) {
           selectedIndex.value = indexName
           selectedSymbols.value = response.data.data.symbols
@@ -1007,7 +1451,8 @@ export default defineComponent({
      */
     const viewSymbolFeatures = async (symbol: string) => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/data/features/${symbol}`)
+        // 使用相对路径，通过Vite代理发送请求
+        const response = await axios.get(`/api/data/features/${symbol}`)
         if (response.data.code === 0) {
           selectedSymbol.value = symbol
           selectedFeatures.value = response.data.data.features
@@ -1018,6 +1463,11 @@ export default defineComponent({
         showMessage('获取股票特征失败')
       }
     }
+    
+    // 页面加载时获取任务列表
+    onMounted(() => {
+      getTasks()
+    })
     
     return {
         currentTab,
@@ -1060,6 +1510,21 @@ export default defineComponent({
         featureCount,
         loadData,
         refreshCollectionData,
+        // 选项数据
+        exchangeOptions,
+        candleTypeOptions,
+        // 任务状态相关
+        currentTaskId,
+        taskStatus,
+        taskProgress,
+        taskLog,
+        isTaskRunning,
+        // 任务列表相关
+        tasks,
+        isLoading,
+        getTasks,
+        getStatusType,
+        getStatusText,
         // 弹窗相关
         showSymbolsModal,
         showFeaturesModal,
@@ -1095,12 +1560,13 @@ export default defineComponent({
 
 .data-management-content {
   display: flex;
+  flex-direction: column;
   gap: 30px;
   min-height: 600px;
 }
 
 .data-management-sidebar {
-  width: 240px;
+  width: 100%;
   flex-shrink: 0;
 }
 
@@ -1112,6 +1578,8 @@ export default defineComponent({
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   border: 1px solid #e0e0e0;
+  display: flex;
+  overflow-x: auto;
 }
 
 .data-management-nav li {
@@ -1510,6 +1978,132 @@ export default defineComponent({
 .icon-chart::before { content: '📈'; }
 .icon-collection::before { content: '📥'; }
 
+/* 任务状态样式 */
+.task-status-section {
+  margin-top: 30px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.task-status-section h4 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 18px;
+  color: #333;
+}
+
+.task-info {
+  display: flex;
+  gap: 30px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.task-id, .task-status {
+  display: flex;
+  align-items: center;
+}
+
+.task-id .label, .task-status .label {
+  font-weight: 500;
+  color: #666;
+  margin-right: 10px;
+}
+
+.task-id .value {
+  font-family: monospace;
+  color: #4a6cf7;
+}
+
+.task-status .value {
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+}
+
+.status-running {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.status-completed {
+  background-color: #e8f5e8;
+  color: #388e3c;
+}
+
+.status-failed {
+  background-color: #ffebee;
+  color: #d32f2f;
+}
+
+.status-canceled {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
+.task-progress {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.progress-bar-container {
+  flex: 1;
+  height: 10px;
+  background-color: #e0e0e0;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #4a6cf7;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-weight: 500;
+  color: #4a6cf7;
+  min-width: 50px;
+}
+
+.task-log {
+  margin-top: 20px;
+}
+
+.task-log h5 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 16px;
+  color: #333;
+}
+
+.log-content {
+  background-color: white;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.log-item {
+  margin-bottom: 8px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.log-item.empty {
+  color: #999;
+  font-style: italic;
+}
+
 /* 数据采集样式 */
 .directory-overview {
   display: grid;
@@ -1611,22 +2205,265 @@ export default defineComponent({
   font-size: 14px;
 }
 
+/* 任务管理样式 */
+.current-task-section {
+  margin-bottom: 30px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.recent-tasks-section {
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.current-task-section h4,
+.recent-tasks-section h4 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 16px;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 10px;
+}
+
+/* 任务详细信息样式 */
+.task-details-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 15px;
+  margin: 20px 0;
+  padding: 20px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-item .label {
+  font-weight: 500;
+  color: #666;
+  font-size: 14px;
+  min-width: 80px;
+}
+
+.detail-item .value {
+  color: #333;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+/* 任务列表样式 */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: #666;
+  gap: 10px;
+}
+
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e0e0e0;
+  border-top: 2px solid #4a6cf7;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 0;
+  color: #999;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.recent-tasks-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.task-card {
+  background-color: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  transition: all 0.3s ease;
+}
+
+.task-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: #4a6cf7;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.task-id-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-id-info .label {
+  font-weight: 500;
+  color: #666;
+  font-size: 14px;
+}
+
+.task-id-info .value {
+  font-family: monospace;
+  color: #4a6cf7;
+  font-size: 14px;
+}
+
+.task-status-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.task-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-time-info {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.time-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-item .label {
+  font-weight: 500;
+  color: #666;
+  font-size: 14px;
+}
+
+.time-item .value {
+  color: #333;
+  font-size: 14px;
+}
+
+.task-progress-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.task-progress-info .label {
+  font-weight: 500;
+  color: #666;
+  font-size: 14px;
+  min-width: 50px;
+}
+
+.task-progress-info .progress-bar-container {
+  flex: 1;
+  min-width: 200px;
+  height: 8px;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.task-progress-info .progress-bar {
+  height: 100%;
+  background-color: #4a6cf7;
+  transition: width 0.3s ease;
+}
+
+.task-progress-info .progress-value {
+  font-weight: 500;
+  color: #4a6cf7;
+  min-width: 40px;
+  text-align: right;
+}
+
+/* 任务参数信息样式 */
+.task-params-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 0;
+}
+
+.param-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.param-item .label {
+  font-weight: 500;
+  color: #666;
+  min-width: 60px;
+  white-space: nowrap;
+}
+
+.param-item .value {
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* 时间范围字段特殊样式 */
+.param-item:nth-child(4) {
+  grid-column: span 2;
+  min-width: 250px;
+}
+
+/* 任务ID上方的横线 */
+.task-header {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e0e0e0;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .data-management-content {
-    flex-direction: column;
-  }
-  
-  .data-management-sidebar {
-    width: 100%;
-  }
-  
-  .data-management-nav ul {
-    display: flex;
-    overflow-x: auto;
-    border-radius: 8px;
-  }
-  
   .data-management-nav li {
     white-space: nowrap;
     min-width: 120px;
@@ -1656,6 +2493,22 @@ export default defineComponent({
   
   .symbol-list, .feature-list {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+  
+  .task-time-info {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  
+  .task-progress-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .task-progress-info .progress-bar-container {
+    min-width: 100%;
   }
 }
 </style>
