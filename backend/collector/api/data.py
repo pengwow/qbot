@@ -108,55 +108,88 @@ def get_data_info():
 
 
 @router.get("/calendars", response_model=ApiResponse)
-def get_calendars(freq: Optional[str] = Query(None, description="频率，如'day'、'1min'等")):
+def get_calendars(
+    freq: Optional[str] = Query(None, description="频率，如'day'、'1min'、'1m'等"),
+    start_time: Optional[str] = Query(None, description="开始时间，格式YYYY-MM-DD HH:mm:SS"),
+    end_time: Optional[str] = Query(None, description="结束时间，格式YYYY-MM-DD HH:mm:SS")
+):
     """获取交易日历信息
     
     Args:
-        freq: 可选，指定频率，如'day'、'1min'等
+        freq: 可选，指定频率，如'day'、'1min'、'1m'等
+        start_time: 可选，开始时间，格式YYYY-MM-DD HH:mm:SS
+        end_time: 可选，结束时间，格式YYYY-MM-DD HH:mm:SS
         
     Returns:
         ApiResponse: 包含交易日历信息的响应
     """
     try:
-        logger.info(f"开始获取交易日历信息，频率: {freq}")
+        logger.info(f"开始获取交易日历信息，频率: {freq}, 开始时间: {start_time}, 结束时间: {end_time}")
         
-        # 获取所有交易日历
-        calendars = data_loader.get_calendars()
-        
-        if freq:
-            # 获取指定频率的交易日历
-            if freq in calendars:
-                calendar = {
-                    "freq": freq,
-                    "dates": calendars[freq],
-                    "count": len(calendars[freq])
-                }
-                return ApiResponse(
-                    code=0,
-                    message="获取交易日历成功",
-                    data=calendar
-                )
-            else:
+        # 确保QLib已初始化
+        if not data_loader.is_data_loaded():
+            logger.info("QLib数据未加载，开始加载数据")
+            
+            # 从系统配置获取qlib_data_dir
+            from ..db import SystemConfigBusiness as SystemConfig
+            qlib_dir = SystemConfig.get("qlib_data_dir")
+            
+            if not qlib_dir:
+                qlib_dir = "data/crypto_data"
+                logger.warning(f"未找到qlib_data_dir配置，使用默认值: {qlib_dir}")
+            
+            # 初始化QLib
+            success = data_loader.init_qlib(qlib_dir)
+            if not success:
+                logger.error("QLib初始化失败，无法获取交易日历")
                 return ApiResponse(
                     code=1,
-                    message=f"未找到频率为{freq}的交易日历",
-                    data={"freq": freq}
+                    message="QLib初始化失败，无法获取交易日历",
+                    data={}
                 )
-        else:
-            # 返回所有交易日历
-            result = []
-            for f, dates in calendars.items():
-                result.append({
-                    "freq": f,
-                    "dates": dates,
-                    "count": len(dates)
-                })
+        
+        # 获取已加载的日历数据
+        calendars = data_loader.get_calendars()
+        logger.info(f"从data_loader获取到的日历数据: {list(calendars.keys())}")
+        
+        # 处理频率参数
+        target_freq = freq if freq else "1d"
+        
+        # 如果请求的频率不在已加载的日历中，尝试获取
+        if target_freq not in calendars:
+            logger.info(f"请求的频率{target_freq}不在已加载的日历中，尝试获取")
             
-            return ApiResponse(
-                code=0,
-                message="获取所有交易日历成功",
-                data=result
+            # 导入D类
+            from qlib.data import D
+            logger.info("D类已成功导入")
+            
+            # 直接调用D.calendar()获取日历数据
+            calendar_dates = D.calendar(
+                freq=target_freq,
+                start_time=start_time,
+                end_time=end_time
             )
+            logger.info(f"成功调用D.calendar()，获取到{len(calendar_dates)}个交易日")
+            
+            # 将获取到的日历添加到已加载的日历中
+            calendars[target_freq] = calendar_dates
+        else:
+            # 使用已加载的日历数据
+            calendar_dates = calendars[target_freq]
+            logger.info(f"使用已加载的日历数据，频率: {target_freq}，共{len(calendar_dates)}个交易日")
+        
+        # 构建响应
+        calendar = {
+            "freq": target_freq,
+            "dates": calendar_dates,
+            "count": len(calendar_dates)
+        }
+        
+        return ApiResponse(
+            code=0,
+            message="获取交易日历成功",
+            data=calendar
+        )
     except Exception as e:
         logger.error(f"获取交易日历失败: {e}")
         logger.exception(e)
@@ -200,9 +233,11 @@ def get_instruments(index_name: Optional[str] = Query(None, description="指数�
                 )
         else:
             # 返回所有成分股
-            result = []
+            result = {
+                "instruments": []
+            }
             for idx, symbols in instruments.items():
-                result.append({
+                result["instruments"].append({
                     "index_name": idx,
                     "symbols": symbols,
                     "count": len(symbols)
@@ -220,39 +255,62 @@ def get_instruments(index_name: Optional[str] = Query(None, description="指数�
 
 
 @router.get("/features", response_model=ApiResponse)
-def get_features(symbol: Optional[str] = Query(None, description="股票代码")):
+def get_features(
+    symbol: Optional[str] = Query(None, description="货币名称"),
+    db: Session = Depends(get_db)
+):
     """获取特征信息
     
     Args:
-        symbol: 可选，指定股票代码
+        symbol: 可选，指定货币名称
+        db: 数据库会话依赖
         
     Returns:
         ApiResponse: 包含特征信息的响应
     """
     try:
-        logger.info(f"开始获取特征信息，股票代码: {symbol}")
+        logger.info(f"开始获取特征信息，货币名称: {symbol}")
         
-        # 获取所有特征
-        features = data_loader.get_features()
+        from ..db import crud
         
         if symbol:
-            # 获取指定股票的特征
-            symbol_features = data_loader.get_symbol_features(symbol)
+            # 获取指定货币的特征
+            features = crud.get_features_by_symbol(db, symbol)
+            
+            # 格式化特征信息
             feature_info = {
                 "symbol": symbol,
-                "features": symbol_features,
-                "count": len(symbol_features)
+                "features": [{
+                    "feature_name": f.feature_name,
+                    "freq": f.freq
+                } for f in features],
+                "count": len(features)
             }
             return ApiResponse(
                 code=0,
-                message="获取股票特征成功",
+                message="获取货币特征成功",
                 data=feature_info
             )
         else:
-            # 返回所有股票的特征
-            result = []
-            for sym, feats in features.items():
-                result.append({
+            # 获取所有货币的特征
+            features = crud.get_features(db)
+            
+            # 按货币名称分组
+            features_by_symbol = {}
+            for f in features:
+                if f.symbol not in features_by_symbol:
+                    features_by_symbol[f.symbol] = []
+                features_by_symbol[f.symbol].append({
+                    "feature_name": f.feature_name,
+                    "freq": f.freq
+                })
+            
+            # 返回所有货币的特征
+            result = {
+                "features": []
+            }
+            for sym, feats in features_by_symbol.items():
+                result["features"].append({
                     "symbol": sym,
                     "features": feats,
                     "count": len(feats)
@@ -270,36 +328,46 @@ def get_features(symbol: Optional[str] = Query(None, description="股票代码")
 
 
 @router.get("/features/{symbol}", response_model=ApiResponse)
-def get_symbol_features(symbol: str):
-    """获取指定股票的特征数据
+def get_symbol_features(
+    symbol: str,
+    db: Session = Depends(get_db)
+):
+    """获取指定货币的特征数据
     
     Args:
-        symbol: 股票代码
+        symbol: 货币名称
+        db: 数据库会话依赖
         
     Returns:
-        ApiResponse: 包含指定股票特征数据的响应
+        ApiResponse: 包含指定货币特征数据的响应
     """
     try:
-        logger.info(f"开始获取股票{symbol}的特征数据")
+        logger.info(f"开始获取货币{symbol}的特征数据")
         
-        # 获取指定股票的特征
-        symbol_features = data_loader.get_symbol_features(symbol)
+        from ..db import crud
         
+        # 获取指定货币的特征
+        features = crud.get_features_by_symbol(db, symbol)
+        
+        # 格式化特征信息
         feature_info = {
             "symbol": symbol,
-            "features": symbol_features,
-            "count": len(symbol_features)
+            "features": [{
+                "feature_name": f.feature_name,
+                "freq": f.freq
+            } for f in features],
+            "count": len(features)
         }
         
-        logger.info(f"成功获取股票{symbol}的特征数据，共{len(symbol_features)}个特征")
+        logger.info(f"成功获取货币{symbol}的特征数据，共{len(features)}个特征")
         
         return ApiResponse(
             code=0,
-            message="获取股票特征成功",
+            message="获取货币特征成功",
             data=feature_info
         )
     except Exception as e:
-        logger.error(f"获取股票特征失败: {e}")
+        logger.error(f"获取货币特征失败: {e}")
         logger.exception(e)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -337,6 +405,92 @@ def get_data_status():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/qlib/status", response_model=ApiResponse)
+def get_qlib_status():
+    """获取QLib状态
+    
+    Returns:
+        ApiResponse: 包含QLib状态的响应
+    """
+    try:
+        logger.info("开始获取QLib状态")
+        
+        # 获取QLib状态
+        data_loaded = data_loader.is_data_loaded()
+        qlib_dir = data_loader.get_qlib_dir()
+        
+        # 获取已加载的数据信息
+        data_info = data_loader.get_loaded_data_info()
+        
+        qlib_status = {
+            "initialized": data_loaded,
+            "qlib_dir": qlib_dir,
+            "data_info": data_info
+        }
+        
+        logger.info(f"成功获取QLib状态: {qlib_status}")
+        
+        return ApiResponse(
+            code=0,
+            message="获取QLib状态成功",
+            data=qlib_status
+        )
+    except Exception as e:
+        logger.error(f"获取QLib状态失败: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/qlib/reload", response_model=ApiResponse)
+def reload_qlib():
+    """重新加载QLib
+    
+    Returns:
+        ApiResponse: 包含重新加载结果的响应
+    """
+    try:
+        logger.info("开始重新加载QLib")
+        
+        # 从系统配置获取qlib_data_dir
+        from ..db import SystemConfigBusiness as SystemConfig
+        qlib_dir = SystemConfig.get("qlib_data_dir")
+        
+        if not qlib_dir:
+            qlib_dir = "data/crypto_data"
+            logger.warning(f"未找到qlib_data_dir配置，使用默认值: {qlib_dir}")
+        
+        # 重新初始化QLib
+        success = data_loader.init_qlib(qlib_dir)
+        
+        if success:
+            logger.info(f"QLib重新加载成功，数据目录: {qlib_dir}")
+            
+            # 获取已加载的数据信息
+            data_info = data_loader.get_loaded_data_info()
+            
+            return ApiResponse(
+                code=0,
+                message="QLib重新加载成功",
+                data={
+                    "qlib_dir": qlib_dir,
+                    "data_info": data_info
+                }
+            )
+        else:
+            logger.error(f"QLib重新加载失败，数据目录: {qlib_dir}")
+            return ApiResponse(
+                code=1,
+                message="QLib重新加载失败",
+                data={
+                    "qlib_dir": qlib_dir
+                }
+            )
+    except Exception as e:
+        logger.error(f"QLib重新加载失败: {e}")
+        logger.exception(e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # 异步下载任务函数
 def async_download_crypto(task_id: str, request: DownloadCryptoRequest):
     """异步下载加密货币数据
@@ -347,6 +501,7 @@ def async_download_crypto(task_id: str, request: DownloadCryptoRequest):
     """
     try:
         from ..scripts.get_data import GetData
+        from pathlib import Path
         
         logger.info(f"开始异步下载加密货币数据，任务ID: {task_id}, 请求参数: {request.model_dump()}")
         
@@ -374,20 +529,44 @@ def async_download_crypto(task_id: str, request: DownloadCryptoRequest):
             # 更新任务进度
             task_manager.update_progress(task_id, current, completed, total, failed)
         
-        # 调用crypto方法下载数据
-        get_data.crypto(
-            exchange=request.exchange,
-            start=request.start,
-            end=request.end,
-            interval=request.interval[0],  # 只使用第一个时间间隔
-            max_workers=request.max_workers,
-            candle_type=request.candle_type,
-            symbols=",".join(request.symbols),
-            convert_to_qlib=True,
-            progress_callback=progress_callback
-        )
+        # 处理保存目录：根据接口类型拼接路径
+        save_dir = request.save_dir
+        if save_dir:
+            # 使用Path对象处理路径，拼接crypto类型
+            save_dir = Path(save_dir) / "crypto"
+            logger.info(f"拼接后的保存目录: {save_dir}")
         
-        logger.info(f"加密货币数据下载成功，任务ID: {task_id}")
+        # 从数据库中读取qlib_data_dir配置
+        from ..db import SystemConfigBusiness as SystemConfig
+        qlib_dir = SystemConfig.get("qlib_data_dir")
+        if not qlib_dir:
+            qlib_dir = "data/crypto_data"
+            logger.warning(f"未找到qlib_data_dir配置，使用默认值: {qlib_dir}")
+        else:
+            logger.info(f"从数据库中读取到qlib_data_dir: {qlib_dir}")
+        
+        # 遍历所有时间周期
+        for interval in request.interval:
+            logger.info(f"开始处理时间周期: {interval}")
+            
+            # 调用crypto方法下载数据
+            get_data.crypto(
+                exchange=request.exchange,
+                save_dir=str(save_dir) if save_dir else None,  # 传递拼接后的save_dir参数，GetData会自动在后面添加时间周期目录
+                start=request.start,
+                end=request.end,
+                interval=interval,  # 使用当前时间周期
+                max_workers=request.max_workers,
+                candle_type=request.candle_type,
+                symbols=",".join(request.symbols),
+                convert_to_qlib=True,
+                qlib_dir=qlib_dir,  # 传递从数据库读取的qlib_data_dir作为转换地址
+                progress_callback=progress_callback
+            )
+            
+            logger.info(f"时间周期 {interval} 数据下载成功")
+        
+        logger.info(f"所有时间周期数据下载成功，任务ID: {task_id}")
         
         # 更新任务状态为已完成
         task_manager.complete_task(task_id)
@@ -413,16 +592,28 @@ def download_crypto(request: DownloadCryptoRequest, background_tasks: Background
     try:
         logger.info(f"收到加密货币数据下载请求，参数: {request.model_dump()}")
         
+        # 如果没有接收到save_dir，则从数据库中读取
+        if not request.save_dir:
+            from ..db import SystemConfigBusiness as SystemConfig
+            logger.info("没有接收到save_dir，从数据库中读取data_download_dir")
+            data_download_dir = SystemConfig.get("data_download_dir")
+            if data_download_dir:
+                logger.info(f"从数据库中读取到data_download_dir: {data_download_dir}")
+                request.save_dir = data_download_dir
+            else:
+                logger.warning("数据库中未找到data_download_dir配置")
+        
         # 创建下载任务
         task_id = task_manager.create_task(
             task_type="download_crypto",
             exchange=request.exchange,
             start=request.start,
             end=request.end,
-            interval=request.interval[0],
+            interval=request.interval,  # 使用所有时间周期
             max_workers=request.max_workers,
             candle_type=request.candle_type,
-            symbols=request.symbols
+            symbols=request.symbols,
+            save_dir=request.save_dir
         )
         
         logger.info(f"创建下载任务成功，任务ID: {task_id}")

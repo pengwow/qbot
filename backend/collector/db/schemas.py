@@ -124,3 +124,49 @@ class TaskPaginatedResponse(BaseModel):
     """
     tasks: list[Task]
     pagination: Dict[str, Any]
+
+
+# 特征模型
+class FeatureBase(BaseModel):
+    """特征基础模型
+    
+    包含特征的基本字段
+    """
+    symbol: str
+    feature_name: str
+    freq: str
+
+
+class FeatureCreate(FeatureBase):
+    """创建特征模型
+    
+    用于创建特征时的数据验证
+    """
+    pass
+
+
+class FeatureUpdate(BaseModel):
+    """更新特征模型
+    
+    用于更新特征时的数据验证
+    """
+    symbol: Optional[str] = None
+    feature_name: Optional[str] = None
+    freq: Optional[str] = None
+
+
+class Feature(FeatureBase):
+    """特征响应模型
+    
+    用于返回特征数据时的序列化
+    """
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        """配置类
+        
+        from_attributes=True: 允许从SQLAlchemy模型实例创建Pydantic模型
+        """
+        from_attributes = True

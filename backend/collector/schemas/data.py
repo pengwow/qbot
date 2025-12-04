@@ -112,6 +112,7 @@ class DownloadCryptoRequest(BaseModel):
         exchange: 交易所
         max_workers: 最大工作线程数
         candle_type: 蜡烛图类型
+        save_dir: 保存目录
     """
     symbols: List[str] = Field(..., description="品种列表")
     interval: List[str] = Field(..., description="时间间隔列表")
@@ -120,6 +121,7 @@ class DownloadCryptoRequest(BaseModel):
     exchange: str = Field(default="binance", description="交易所")
     max_workers: int = Field(default=1, description="最大工作线程数")
     candle_type: str = Field(default="spot", description="蜡烛图类型")
+    save_dir: Optional[str] = Field(None, description="保存目录，如果不提供则从系统配置中读取data_download_dir")
 
 
 class TaskStatusResponse(BaseModel):

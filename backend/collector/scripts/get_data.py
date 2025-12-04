@@ -62,16 +62,20 @@ class GetData:
             try:
                 data_download_dir = SystemConfig.get("data_download_dir")
                 if data_download_dir:
-                    save_dir = Path(data_download_dir) / interval
+                    save_dir = Path(data_download_dir)
                     logger.info(f"从数据库获取下载目录: {save_dir}")
                 else:
                     # 数据库中没有配置，使用默认值
-                    save_dir = self.default_save_dir / interval
+                    save_dir = self.default_save_dir
                     logger.info(f"数据库中未找到下载目录配置，使用默认值: {save_dir}")
             except Exception as e:
                 # 数据库读取失败，使用默认值
-                save_dir = self.default_save_dir / interval
+                save_dir = self.default_save_dir
                 logger.warning(f"从数据库读取下载目录失败: {e}，使用默认值: {save_dir}")
+        
+        # 确保在save_dir后面添加interval作为子目录
+        save_dir = Path(save_dir) / interval
+        logger.info(f"最终保存目录: {save_dir}")
         
         # 处理交易对列表
         if symbols is not None:
@@ -147,16 +151,20 @@ class GetData:
             try:
                 data_download_dir = SystemConfig.get("data_download_dir")
                 if data_download_dir:
-                    save_dir = Path(data_download_dir) / interval
+                    save_dir = Path(data_download_dir)
                     logger.info(f"从数据库获取下载目录: {save_dir}")
                 else:
                     # 数据库中没有配置，使用默认值
-                    save_dir = self.default_save_dir / interval
+                    save_dir = self.default_save_dir
                     logger.info(f"数据库中未找到下载目录配置，使用默认值: {save_dir}")
             except Exception as e:
                 # 数据库读取失败，使用默认值
-                save_dir = self.default_save_dir / interval
+                save_dir = self.default_save_dir
                 logger.warning(f"从数据库读取下载目录失败: {e}，使用默认值: {save_dir}")
+        
+        # 确保在save_dir后面添加interval作为子目录
+        save_dir = Path(save_dir) / interval
+        logger.info(f"最终保存目录: {save_dir}")
         
         # 处理交易对列表
         if symbols is not None:

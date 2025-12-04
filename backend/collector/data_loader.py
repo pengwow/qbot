@@ -7,12 +7,21 @@ from typing import Dict, List, Optional, Any
 from loguru import logger
 
 # 添加项目根目录到Python路径
-project_root = Path(__file__).parent.parent.parent  # /Users/liupeng/workspace/qbot
+backend_root = Path(__file__).parent.parent  # /Users/liupeng/workspace/qbot/backend
+project_root = backend_root.parent  # /Users/liupeng/workspace/qbot
 sys.path.append(str(project_root))
 
 # 添加qlib目录到Python路径
 qlib_dir = project_root / "qlib"
 sys.path.append(str(qlib_dir))
+
+# 导入自定义日历提供者，触发monkey patching
+try:
+    from backend.qlib_integration import custom_calendar_provider
+    logger.info("成功导入custom_calendar_provider模块")
+except Exception as e:
+    logger.error(f"导入custom_calendar_provider模块失败: {e}")
+    raise
 
 # 导入QLib相关模块
 try:
@@ -68,11 +77,11 @@ class QLibDataLoader:
         try:
             logger.info(f"开始初始化QLib，数据目录: {qlib_dir}")
             
-            # 处理相对路径，将相对路径转换为基于项目根目录的绝对路径
+            # 处理相对路径，将相对路径转换为基于backend目录的绝对路径
             qlib_dir_path = Path(qlib_dir)
             if not qlib_dir_path.is_absolute():
-                # 相对路径，基于项目根目录
-                qlib_dir_path = project_root / qlib_dir_path
+                # 相对路径，基于backend目录
+                qlib_dir_path = backend_root / qlib_dir_path
                 logger.info(f"相对路径转换为绝对路径: {qlib_dir} -> {qlib_dir_path}")
             
             # 检查目录是否存在
@@ -80,6 +89,15 @@ class QLibDataLoader:
             if not qlib_dir_path.exists():
                 logger.error(f"QLib数据目录不存在: {qlib_dir_path}")
                 return False
+            
+            # 导入qlib模块
+            import qlib
+            
+            # 初始化qlib
+            qlib.init(
+                provider_uri=str(qlib_dir_path),
+            )
+            logger.info(f"成功调用qlib.init()，数据目录: {qlib_dir_path}")
             
             # 设置QLib数据目录
             C["qlib_data_dir"] = str(qlib_dir_path)
@@ -134,24 +152,34 @@ class QLibDataLoader:
         try:
             calendars = {}
             
-            # 获取日历目录
-            calendars_dir = self._qlib_dir / "calendars"
-            if not calendars_dir.exists():
-                logger.warning(f"交易日历目录不存在: {calendars_dir}")
-                return calendars
+            # 支持的频率列表
+            supported_freqs = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "day"]
             
-            # 遍历日历文件
-            for calendar_file in calendars_dir.glob("*.txt"):
-                freq = calendar_file.stem
-                with open(calendar_file, "r") as f:
-                    dates = [line.strip() for line in f if line.strip()]
-                calendars[freq] = dates
-                logger.info(f"加载交易日历成功: {freq}, 共 {len(dates)} 个交易日")
+            # 使用D.calendar()函数获取日历信息
+            for freq in supported_freqs:
+                try:
+                    logger.info(f"尝试加载频率为{freq}的交易日历")
+                    # 使用D.calendar()获取日历
+                    calendar = D.calendar(freq=freq)
+                    logger.info(f"获取频率为{freq}的交易日历结果: {calendar}")
+                    if calendar is not None and len(calendar) > 0:
+                        calendars[freq] = calendar
+                        logger.info(f"加载交易日历成功: {freq}, 共 {len(calendar)} 个交易日")
+                    else:
+                        logger.warning(f"加载交易日历失败: {freq}, 日历为空")
+                except Exception as e:
+                    logger.warning(f"加载交易日历失败: {freq}, 错误: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
             
+            logger.info(f"最终加载的交易日历: {list(calendars.keys())}")
             return calendars
         except Exception as e:
             logger.error(f"加载交易日历失败: {e}")
             logger.exception(e)
+            import traceback
+            traceback.print_exc()
             return {}
     
     def _load_instruments(self) -> Dict[str, List[str]]:

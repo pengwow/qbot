@@ -302,3 +302,188 @@ def delete_task(db: Session, task_id: str) -> bool:
         return True
     
     return False
+
+
+# 特征CRUD操作
+
+def get_feature(
+    db: Session, 
+    feature_id: int
+) -> Optional[models.Feature]:
+    """获取单个特征
+    
+    Args:
+        db: 数据库会话
+        feature_id: 特征ID
+        
+    Returns:
+        Optional[models.Feature]: 特征模型实例，不存在则返回None
+    """
+    return db.query(models.Feature).filter(models.Feature.id == feature_id).first()
+
+
+def get_features(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100
+) -> List[models.Feature]:
+    """获取特征列表
+    
+    Args:
+        db: 数据库会话
+        skip: 跳过的记录数
+        limit: 返回的最大记录数
+        
+    Returns:
+        List[models.Feature]: 特征模型实例列表
+    """
+    return db.query(models.Feature).offset(skip).limit(limit).all()
+
+
+def get_features_by_symbol(
+    db: Session, 
+    symbol: str
+) -> List[models.Feature]:
+    """根据货币名称获取特征列表
+    
+    Args:
+        db: 数据库会话
+        symbol: 货币名称
+        
+    Returns:
+        List[models.Feature]: 特征模型实例列表
+    """
+    return db.query(models.Feature).filter(models.Feature.symbol == symbol).all()
+
+
+def create_feature(
+    db: Session, 
+    feature: schemas.FeatureCreate
+) -> models.Feature:
+    """创建特征
+    
+    Args:
+        db: 数据库会话
+        feature: 创建特征的数据模型
+        
+    Returns:
+        models.Feature: 创建后的特征模型实例
+    """
+    # 将Pydantic模型转换为SQLAlchemy模型
+    db_feature = models.Feature(**feature.model_dump())
+    
+    # 添加到会话并提交
+    db.add(db_feature)
+    db.commit()
+    
+    # 刷新会话以获取最新数据（包括自动生成的字段）
+    db.refresh(db_feature)
+    
+    return db_feature
+
+
+def create_features(
+    db: Session, 
+    features: List[schemas.FeatureCreate]
+) -> List[models.Feature]:
+    """批量创建特征
+    
+    Args:
+        db: 数据库会话
+        features: 创建特征的数据模型列表
+        
+    Returns:
+        List[models.Feature]: 创建后的特征模型实例列表
+    """
+    # 将Pydantic模型转换为SQLAlchemy模型
+    db_features = [models.Feature(**feature.model_dump()) for feature in features]
+    
+    # 添加到会话并提交
+    db.add_all(db_features)
+    db.commit()
+    
+    # 刷新会话以获取最新数据（包括自动生成的字段）
+    for db_feature in db_features:
+        db.refresh(db_feature)
+    
+    return db_features
+
+
+def update_feature(
+    db: Session, 
+    feature_id: int, 
+    feature: schemas.FeatureUpdate
+) -> Optional[models.Feature]:
+    """更新特征
+    
+    Args:
+        db: 数据库会话
+        feature_id: 特征ID
+        feature: 更新特征的数据模型
+        
+    Returns:
+        Optional[models.Feature]: 更新后的特征模型实例，不存在则返回None
+    """
+    # 获取要更新的特征
+    db_feature = get_feature(db, feature_id)
+    
+    if db_feature:
+        # 使用exclude_unset=True只更新提供的字段
+        update_data = feature.model_dump(exclude_unset=True)
+        
+        # 更新字段
+        for field, value in update_data.items():
+            setattr(db_feature, field, value)
+        
+        # 提交更新
+        db.commit()
+        
+        # 刷新会话以获取最新数据
+        db.refresh(db_feature)
+    
+    return db_feature
+
+
+def delete_feature(
+    db: Session, 
+    feature_id: int
+) -> bool:
+    """删除特征
+    
+    Args:
+        db: 数据库会话
+        feature_id: 特征ID
+        
+    Returns:
+        bool: 删除成功返回True，失败返回False
+    """
+    # 获取要删除的特征
+    db_feature = get_feature(db, feature_id)
+    
+    if db_feature:
+        # 从会话中删除
+        db.delete(db_feature)
+        db.commit()
+        return True
+    
+    return False
+
+
+def delete_features_by_symbol(
+    db: Session, 
+    symbol: str
+) -> bool:
+    """根据货币名称删除特征
+    
+    Args:
+        db: 数据库会话
+        symbol: 货币名称
+        
+    Returns:
+        bool: 删除成功返回True，失败返回False
+    """
+    # 删除所有匹配的特征
+    result = db.query(models.Feature).filter(models.Feature.symbol == symbol).delete()
+    db.commit()
+    
+    return result > 0

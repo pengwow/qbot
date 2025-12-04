@@ -49,6 +49,21 @@ class Task(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now(), index=True)
 
 
+class Feature(Base):
+    """特征信息SQLAlchemy模型
+    
+    对应features表的SQLAlchemy模型定义，用于存储特征信息
+    """
+    __tablename__ = "features"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    symbol = Column(String, nullable=False, index=True)
+    feature_name = Column(String, nullable=False, index=True)
+    freq = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+
 # 保留现有的业务逻辑类，确保向后兼容
 class SystemConfigBusiness:
     """系统配置模型类
