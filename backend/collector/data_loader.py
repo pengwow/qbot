@@ -122,8 +122,15 @@ class QLibDataLoader:
         try:
             logger.info("开始加载QLib数据")
             
-            # 加载数据
-            D.init()
+            # 移除过时的D.init()调用，D对象在qlib.init()后应该已经可用
+            # 尝试直接使用D对象，测试其是否可用
+            try:
+                # 尝试获取一个日历，测试D对象是否可用
+                D.calendar(freq="1d")
+                logger.info("D对象可用，无需调用init方法")
+            except Exception as e:
+                logger.warning(f"测试D对象时出现异常: {e}，但继续尝试加载数据")
+            
             self._data_loaded = True
             
             # 加载交易日历
@@ -163,8 +170,19 @@ class QLibDataLoader:
                     calendar = D.calendar(freq=freq)
                     logger.info(f"获取频率为{freq}的交易日历结果: {calendar}")
                     if calendar is not None and len(calendar) > 0:
-                        calendars[freq] = calendar
-                        logger.info(f"加载交易日历成功: {freq}, 共 {len(calendar)} 个交易日")
+                        # 将numpy.ndarray转换为Python标准类型列表，将Timestamp对象转换为字符串
+                        calendar_list = []
+                        for date in calendar:
+                            try:
+                                # 转换Timestamp对象为字符串格式
+                                date_str = str(date)
+                                calendar_list.append(date_str)
+                            except Exception as e:
+                                logger.warning(f"转换日期时出现异常: {e}, 日期: {date}")
+                                continue
+                        
+                        calendars[freq] = calendar_list
+                        logger.info(f"加载交易日历成功: {freq}, 共 {len(calendar_list)} 个交易日")
                     else:
                         logger.warning(f"加载交易日历失败: {freq}, 日历为空")
                 except Exception as e:

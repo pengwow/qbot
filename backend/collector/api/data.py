@@ -171,8 +171,20 @@ def get_calendars(
             )
             logger.info(f"成功调用D.calendar()，获取到{len(calendar_dates)}个交易日")
             
+            # 将numpy.ndarray转换为Python标准类型列表，将Timestamp对象转换为字符串
+            calendar_list = []
+            for date in calendar_dates:
+                try:
+                    # 转换Timestamp对象为字符串格式
+                    date_str = str(date)
+                    calendar_list.append(date_str)
+                except Exception as e:
+                    logger.warning(f"转换日期时出现异常: {e}, 日期: {date}")
+                    continue
+            
             # 将获取到的日历添加到已加载的日历中
-            calendars[target_freq] = calendar_dates
+            calendars[target_freq] = calendar_list
+            calendar_dates = calendar_list
         else:
             # 使用已加载的日历数据
             calendar_dates = calendars[target_freq]
